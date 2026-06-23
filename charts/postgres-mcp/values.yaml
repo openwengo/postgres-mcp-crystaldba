@@ -1,0 +1,117 @@
+replicaCount: 1
+revisionHistoryLimit: 3
+
+image:
+  repository: crystaldba/postgres-mcp
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+containerPort: 8000
+
+mcp:
+  accessMode: restricted
+  transport: sse
+  bindHost: 0.0.0.0
+  extraArgs: []
+
+database:
+  uri: ""
+  existingSecret: ""
+  existingSecretKey: DATABASE_URI
+  secretNameOverride: ""
+
+extraEnv: []
+extraEnvFrom: []
+
+service:
+  type: ClusterIP
+  port: 8000
+  annotations: {}
+
+ingresses: {}
+# Example:
+# ingresses:
+#   public:
+#     enabled: true
+#     className: nginx
+#     annotations: {}
+#     hosts:
+#       - host: postgres-mcp.example.com
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#     tls: []
+#   internal:
+#     enabled: true
+#     className: internal-nginx
+#     annotations: {}
+#     hosts:
+#       - host: postgres-mcp.internal.example.com
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#     tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+livenessProbe:
+  tcpSocket:
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 6
+
+readinessProbe:
+  tcpSocket:
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: null
+  metrics: []
+  behavior: {}
+
+pdb:
+  enabled: false
+  minAvailable: 1
+  maxUnavailable: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""
+terminationGracePeriodSeconds: 30

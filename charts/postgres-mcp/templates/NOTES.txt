@@ -1,0 +1,11 @@
+Postgres MCP has been deployed.
+
+The MCP SSE endpoint is exposed inside the cluster at:
+  http://{{ include "postgres-mcp.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}/sse
+
+{{- if not (or .Values.database.existingSecret .Values.database.uri) }}
+
+No DATABASE_URI source was configured. Set one of:
+  database.existingSecret: name-of-existing-secret
+  database.uri: postgresql://user:password@host:5432/dbname
+{{- end }}

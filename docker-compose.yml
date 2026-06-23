@@ -1,0 +1,45 @@
+services:
+  postgres:
+    build:
+      context: ./tests
+      dockerfile: Dockerfile.postgres-hypopg
+      args:
+        PG_VERSION: ${POSTGRES_VERSION:-15}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres_mcp}
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  postgres-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres_mcp}
+    command:
+      - --access-mode=${POSTGRES_MCP_ACCESS_MODE:-unrestricted}
+      - --transport=sse
+      - --sse-port=8000
+    ports:
+      - "${POSTGRES_MCP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

@@ -276,6 +276,94 @@ For Windsurf, the format in `mcp_config.json` is slightly different:
 }
 ```
 
+## Development With Docker Compose
+
+The repository includes a Docker Compose stack for local development. It starts Postgres MCP Pro with SSE enabled and a local PostgreSQL database with `pg_stat_statements` and `hypopg` available.
+
+```bash
+docker compose up --build
+```
+
+The MCP SSE endpoint is available at:
+
+```text
+http://localhost:8000/sse
+```
+
+Useful environment overrides:
+
+```bash
+POSTGRES_MCP_PORT=8080 POSTGRES_PORT=15432 docker compose up --build
+POSTGRES_MCP_ACCESS_MODE=restricted docker compose up --build
+POSTGRES_VERSION=16 docker compose up --build
+```
+
+To reset the development database:
+
+```bash
+docker compose down -v
+```
+
+## Kubernetes With Helm
+
+The Helm chart lives in `charts/postgres-mcp` and deploys Postgres MCP Pro using the SSE transport by default.
+
+Use an existing secret for the database connection URI:
+
+```bash
+kubectl create secret generic postgres-mcp-database \
+  --from-literal=DATABASE_URI='postgresql://user:password@postgres:5432/dbname'
+
+helm upgrade --install postgres-mcp ./charts/postgres-mcp \
+  --set database.existingSecret=postgres-mcp-database
+```
+
+If your existing secret uses a different key, set `database.existingSecretKey`.
+
+```bash
+helm upgrade --install postgres-mcp ./charts/postgres-mcp \
+  --set database.existingSecret=postgres-mcp-database \
+  --set database.existingSecretKey=uri
+```
+
+For development or controlled environments, the chart can create the secret from `database.uri`:
+
+```bash
+helm upgrade --install postgres-mcp ./charts/postgres-mcp \
+  --set-string database.uri='postgresql://user:password@postgres:5432/dbname'
+```
+
+Enable HPA, PDB, and multiple ingress resources with values:
+
+```yaml
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+ingresses:
+  public:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: postgres-mcp.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+  internal:
+    enabled: true
+    className: internal-nginx
+    hosts:
+      - host: postgres-mcp.internal.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+```
+
 ## Postgres Extension Installation (Optional)
 
 To enable index tuning and comprehensive performance analysis you need to load the `pg_stat_statements` and `hypopg` extensions on your database.
