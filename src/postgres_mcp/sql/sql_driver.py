@@ -149,6 +149,7 @@ class SqlDriver:
         self,
         conn: Any = None,
         engine_url: str | None = None,
+        connection_name: str | None = None,
     ):
         """
         Initialize with a PostgreSQL connection or pool.
@@ -156,7 +157,9 @@ class SqlDriver:
         Args:
             conn: PostgreSQL connection object or pool
             engine_url: Connection URL string as an alternative to providing a connection
+            connection_name: Optional configured connection name for cache scoping and diagnostics
         """
+        self.connection_name = connection_name
         if conn:
             self.conn = conn
             # Check if this is a connection pool

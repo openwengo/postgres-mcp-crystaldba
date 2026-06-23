@@ -3,9 +3,8 @@
 # Don't exit immediately so we can debug issues
 # set -e
 
-# Function to replace localhost in a string with the Docker host
-replace_localhost() {
-    local input_str="$1"
+# Function to determine Docker host address
+detect_docker_host() {
     local docker_host=""
 
     # Try to determine Docker host address
@@ -17,6 +16,21 @@ replace_localhost() {
         echo "Docker on Linux detected: Using 172.17.0.1 for localhost" >&2
     else
         echo "WARNING: Cannot determine Docker host IP. Using original address." >&2
+        return 1
+    fi
+
+    echo "$docker_host"
+    return 0
+}
+
+# Function to replace localhost in a string with the Docker host
+replace_localhost() {
+    local input_str="$1"
+    local docker_host=""
+
+    docker_host=$(detect_docker_host)
+    if [[ $? -ne 0 ]]; then
+        echo "$input_str"
         return 1
     fi
 
@@ -59,6 +73,34 @@ if [[ -n "$DATABASE_URI" && "$DATABASE_URI" == *"postgres"*"://"*"localhost"* ]]
     new_uri=$(replace_localhost "$DATABASE_URI")
     if [[ $? -eq 0 ]]; then
         export DATABASE_URI="$new_uri"
+    fi
+fi
+
+# Check and replace localhost in DATABASE_CONNECTIONS if it exists.
+# Keep this JSON-aware so connection names, modes, and unrelated values remain unchanged.
+if [[ -n "$DATABASE_CONNECTIONS" && "$DATABASE_CONNECTIONS" == *"localhost"* ]]; then
+    echo "Found localhost in DATABASE_CONNECTIONS" >&2
+    docker_host=$(detect_docker_host)
+    if [[ $? -eq 0 ]]; then
+        new_connections=$(POSTGRES_MCP_DOCKER_HOST="$docker_host" python - <<'PY'
+import json
+import os
+import sys
+
+try:
+    data = json.loads(os.environ["DATABASE_CONNECTIONS"])
+    for connection in data.get("connections", {}).values():
+        if isinstance(connection, dict) and isinstance(connection.get("uri"), str):
+            connection["uri"] = connection["uri"].replace("localhost", os.environ["POSTGRES_MCP_DOCKER_HOST"])
+    print(json.dumps(data, separators=(",", ":")))
+except Exception as exc:
+    print(f"WARNING: Could not parse DATABASE_CONNECTIONS for localhost remapping: {exc}", file=sys.stderr)
+    sys.exit(1)
+PY
+)
+        if [[ $? -eq 0 ]]; then
+            export DATABASE_CONNECTIONS="$new_connections"
+        fi
     fi
 fi
 

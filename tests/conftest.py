@@ -1,5 +1,8 @@
 import asyncio
+import sys
+from typing import Any
 from typing import Generator
+from typing import cast
 
 import pytest
 from dotenv import load_dotenv
@@ -27,3 +30,23 @@ def reset_pg_version_cache():
     """Reset the PostgreSQL version cache before each test."""
     reset_postgres_version_cache()
     yield
+
+
+@pytest.fixture(autouse=True)
+def reset_server_connection_state():
+    """Reset mutable server connection globals after tests that import the server module."""
+    yield
+    server = cast(Any, sys.modules.get("postgres_mcp.server"))
+    if server is None:
+        return
+
+    server.db_connections = {}
+    server.connection_configs = {}
+    server.default_connection_name = "default"
+    server.connection_selection = "default"
+    server.current_access_mode = server.AccessMode.UNRESTRICTED
+    server.shutdown_in_progress = False
+    server.db_connection.connection_url = None
+    server.db_connection.pool = None
+    server.db_connection._is_valid = False
+    server.db_connection._last_error = None

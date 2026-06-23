@@ -60,14 +60,34 @@ Create the name of the service account to use.
 {{- end -}}
 
 {{/*
-Create the database secret name.
+Create the generated database secret name.
+*/}}
+{{- define "postgres-mcp.generatedDatabaseSecretName" -}}
+{{- if .Values.database.secretNameOverride -}}
+{{- .Values.database.secretNameOverride -}}
+{{- else -}}
+{{- printf "%s-database" (include "postgres-mcp.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the legacy DATABASE_URI secret name.
 */}}
 {{- define "postgres-mcp.databaseSecretName" -}}
 {{- if .Values.database.existingSecret -}}
 {{- .Values.database.existingSecret -}}
-{{- else if .Values.database.secretNameOverride -}}
-{{- .Values.database.secretNameOverride -}}
 {{- else -}}
-{{- printf "%s-database" (include "postgres-mcp.fullname" .) -}}
+{{- include "postgres-mcp.generatedDatabaseSecretName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the DATABASE_CONNECTIONS secret name.
+*/}}
+{{- define "postgres-mcp.databaseConnectionsSecretName" -}}
+{{- if .Values.database.existingConnectionsSecret -}}
+{{- .Values.database.existingConnectionsSecret -}}
+{{- else -}}
+{{- include "postgres-mcp.generatedDatabaseSecretName" . -}}
 {{- end -}}
 {{- end -}}

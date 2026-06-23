@@ -9,9 +9,8 @@ from .sql_driver import SqlDriver
 
 logger = logging.getLogger(__name__)
 
-# Single global PostgreSQL version cache
-# TODO: If we support multiple connections in the future, this should be connection-specific
-_POSTGRES_VERSION = None
+# PostgreSQL version cache scoped by configured connection identity.
+_POSTGRES_VERSION_BY_CONNECTION: dict[str, int] = {}
 
 
 @dataclass
@@ -27,8 +26,18 @@ class ExtensionStatus:
 
 def reset_postgres_version_cache() -> None:
     """Reset the PostgreSQL version cache. Primarily used for testing."""
-    global _POSTGRES_VERSION
-    _POSTGRES_VERSION = None
+    _POSTGRES_VERSION_BY_CONNECTION.clear()
+
+
+def _postgres_version_cache_key(sql_driver: SqlDriver) -> str:
+    connection_name = getattr(sql_driver, "connection_name", None)
+    if connection_name:
+        return str(connection_name)
+    wrapped_driver = getattr(sql_driver, "sql_driver", None)
+    wrapped_connection_name = getattr(wrapped_driver, "connection_name", None)
+    if wrapped_connection_name:
+        return str(wrapped_connection_name)
+    return str(id(sql_driver))
 
 
 async def get_postgres_version(sql_driver: SqlDriver) -> int:
@@ -42,10 +51,9 @@ async def get_postgres_version(sql_driver: SqlDriver) -> int:
         The major PostgreSQL version as an integer (e.g., 16 for PostgreSQL 16.2)
         Returns 0 if the version cannot be determined
     """
-    # Check if we have a cached version
-    global _POSTGRES_VERSION
-    if _POSTGRES_VERSION is not None:
-        return _POSTGRES_VERSION
+    cache_key = _postgres_version_cache_key(sql_driver)
+    if cache_key in _POSTGRES_VERSION_BY_CONNECTION:
+        return _POSTGRES_VERSION_BY_CONNECTION[cache_key]
 
     try:
         rows = await sql_driver.execute_query("SHOW server_version")
@@ -58,8 +66,7 @@ async def get_postgres_version(sql_driver: SqlDriver) -> int:
         major_version = version_string.split(".")[0]
         version = int(major_version)
 
-        # Cache the version globally
-        _POSTGRES_VERSION = version
+        _POSTGRES_VERSION_BY_CONNECTION[cache_key] = version
 
         return version
     except Exception as e:

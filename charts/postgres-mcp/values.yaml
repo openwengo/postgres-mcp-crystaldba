@@ -36,8 +36,11 @@ mcp:
 
 database:
   uri: ""
+  connections: ""
   existingSecret: ""
   existingSecretKey: DATABASE_URI
+  existingConnectionsSecret: ""
+  existingConnectionsSecretKey: DATABASE_CONNECTIONS
   secretNameOverride: ""
 
 extraEnv: []

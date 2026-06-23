@@ -874,6 +874,7 @@ class SafeSqlDriver(SqlDriver):
         """
         self.sql_driver = sql_driver
         self.timeout = timeout
+        self.connection_name = getattr(sql_driver, "connection_name", None)
 
     def _validate_node(self, node: Node) -> None:
         """Recursively validate a node and all its children"""

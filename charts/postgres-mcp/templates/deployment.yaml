@@ -14,9 +14,9 @@ spec:
       {{- include "postgres-mcp.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- if or (and (not .Values.database.existingSecret) .Values.database.uri) .Values.podAnnotations }}
+      {{- if or (and (not .Values.database.existingSecret) .Values.database.uri) (and (not .Values.database.existingConnectionsSecret) .Values.database.connections) .Values.podAnnotations }}
       annotations:
-        {{- if and (not .Values.database.existingSecret) .Values.database.uri }}
+        {{- if or (and (not .Values.database.existingSecret) .Values.database.uri) (and (not .Values.database.existingConnectionsSecret) .Values.database.connections) }}
         checksum/database-secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- end }}
         {{- with .Values.podAnnotations }}
@@ -56,7 +56,7 @@ spec:
             {{- with .Values.mcp.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- if or .Values.database.existingSecret .Values.database.uri .Values.extraEnv }}
+          {{- if or .Values.database.existingSecret .Values.database.uri .Values.database.existingConnectionsSecret .Values.database.connections .Values.extraEnv }}
           env:
             {{- if or .Values.database.existingSecret .Values.database.uri }}
             - name: DATABASE_URI
@@ -64,6 +64,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "postgres-mcp.databaseSecretName" . }}
                   key: {{ .Values.database.existingSecretKey }}
+            {{- end }}
+            {{- if or .Values.database.existingConnectionsSecret .Values.database.connections }}
+            - name: DATABASE_CONNECTIONS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgres-mcp.databaseConnectionsSecretName" . }}
+                  key: {{ .Values.database.existingConnectionsSecretKey }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}

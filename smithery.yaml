@@ -6,16 +6,30 @@ startCommand:
     # JSON Schema defining the configuration options for the MCP.
     type: object
     required:
-      - databaseUri
       - accessMode
+    anyOf:
+      - required:
+          - databaseUri
+      - required:
+          - databaseConnections
     properties:
       databaseUri:
         type: string
         description: URI for accessing the database, e.g., postgres://user:password@host:port/database.
+      databaseConnections:
+        type: string
+        description: JSON DATABASE_CONNECTIONS configuration for multiple named databases.
       accessMode:
         type: string
         description: The access mode for the MCP, e.g., "restricted" or "unrestricted".
   commandFunction:
     # A function that produces the CLI command to start the MCP on stdio.
     |-
-    (config) => ({command: '/app/docker-entrypoint.sh', args: ['postgres-mcp', '--access-mode',config.accessMode], env: {DATABASE_URI: config.databaseUri}})
+    (config) => ({
+      command: '/app/docker-entrypoint.sh',
+      args: ['postgres-mcp', '--access-mode', config.accessMode],
+      env: {
+        ...(config.databaseUri ? {DATABASE_URI: config.databaseUri} : {}),
+        ...(config.databaseConnections ? {DATABASE_CONNECTIONS: config.databaseConnections} : {})
+      }
+    })

@@ -1,0 +1,80 @@
+services:
+  postgres-main:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres-hypopg
+      args:
+        PG_VERSION: ${POSTGRES_VERSION:-15}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: main_db
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d main_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - ./multi_connection/init-main.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  postgres-analytics:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres-hypopg
+      args:
+        PG_VERSION: ${POSTGRES_VERSION:-15}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: analytics_db
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d analytics_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - ./multi_connection/init-analytics.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  postgres-mcp:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_CONNECTIONS: >-
+        {
+          "connections": {
+            "main": {
+              "uri": "postgresql://postgres:postgres@postgres-main:5432/main_db",
+              "mode": "restricted"
+            },
+            "analytics": {
+              "uri": "postgresql://postgres:postgres@postgres-analytics:5432/analytics_db",
+              "mode": "unrestricted"
+            }
+          },
+          "default_connection": "main",
+          "connection_selection": "strict"
+        }
+    command:
+      - --transport=streamable-http
+      - --streamable-http-host=0.0.0.0
+      - --streamable-http-port=8000
+    ports:
+      - "${POSTGRES_MCP_MULTI_CONNECTION_PORT:-18080}:8000"
+    depends_on:
+      postgres-main:
+        condition: service_healthy
+      postgres-analytics:
+        condition: service_healthy
