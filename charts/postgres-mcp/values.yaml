@@ -35,10 +35,19 @@ mcp:
   extraArgs: []
 
 database:
+  # Legacy single-connection source. Creates a generated Secret with DATABASE_URI
+  # when set.
   uri: ""
+  # Multi-connection source. Creates a generated Secret with DATABASE_CONNECTIONS
+  # when set. The value must be the JSON string expected by the server.
   connections: ""
+  # Legacy single-connection existing Secret. This Secret must contain
+  # existingSecretKey, which defaults to DATABASE_URI.
   existingSecret: ""
   existingSecretKey: DATABASE_URI
+  # Multi-connection existing Secret. This Secret must contain
+  # existingConnectionsSecretKey, which defaults to DATABASE_CONNECTIONS.
+  # Use this instead of existingSecret when your Secret has DATABASE_CONNECTIONS.
   existingConnectionsSecret: ""
   existingConnectionsSecretKey: DATABASE_CONNECTIONS
   secretNameOverride: ""

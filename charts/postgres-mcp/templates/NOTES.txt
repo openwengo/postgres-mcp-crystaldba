@@ -1,11 +1,17 @@
 Postgres MCP has been deployed.
 
-The MCP SSE endpoint is exposed inside the cluster at:
-  http://{{ include "postgres-mcp.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}/sse
+{{- $endpointPath := "/sse" -}}
+{{- if eq .Values.mcp.transport "streamable-http" -}}
+{{- $endpointPath = "/mcp" -}}
+{{- end }}
+The MCP {{ .Values.mcp.transport }} endpoint is exposed inside the cluster at:
+  http://{{ include "postgres-mcp.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}{{ $endpointPath }}
 
-{{- if not (or .Values.database.existingSecret .Values.database.uri) }}
+{{- if not (or .Values.database.existingSecret .Values.database.uri .Values.database.existingConnectionsSecret .Values.database.connections) }}
 
-No DATABASE_URI source was configured. Set one of:
-  database.existingSecret: name-of-existing-secret
+No database source was configured. Set one of:
+  database.existingConnectionsSecret: name-of-existing-secret-with-DATABASE_CONNECTIONS
+  database.connections: '{"connections":{"main":{"uri":"postgresql://user:password@host:5432/dbname","mode":"restricted"}},"default_connection":"main"}'
+  database.existingSecret: name-of-existing-secret-with-DATABASE_URI
   database.uri: postgresql://user:password@host:5432/dbname
 {{- end }}

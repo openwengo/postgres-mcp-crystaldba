@@ -4,7 +4,34 @@ This chart deploys Postgres MCP Pro using the SSE transport by default.
 
 ## Database Secret
 
-Use an existing Kubernetes secret:
+Use an existing Kubernetes secret with `DATABASE_CONNECTIONS`:
+
+```bash
+kubectl create secret generic postgres-mcp-database-connections \
+  --from-literal=DATABASE_CONNECTIONS='{"connections":{"main":{"uri":"postgresql://user:password@postgres:5432/dbname","mode":"restricted"}},"default_connection":"main"}'
+
+helm upgrade --install postgres-mcp ./charts/postgres-mcp \
+  --set database.existingConnectionsSecret=postgres-mcp-database-connections
+```
+
+Do not set `database.existingSecret` for a `DATABASE_CONNECTIONS`-only secret.
+`database.existingSecret` is the legacy `DATABASE_URI` path.
+
+Or let the chart create a secret from `database.connections`:
+
+```bash
+cat > values-connections.yaml <<'EOF'
+database:
+  connections: |
+    {"connections":{"main":{"uri":"postgresql://user:password@postgres:5432/dbname","mode":"restricted"}},"default_connection":"main"}
+EOF
+
+helm upgrade --install postgres-mcp ./charts/postgres-mcp \
+  -f values-connections.yaml
+```
+
+For legacy single-connection deployments, use an existing Kubernetes secret with
+`DATABASE_URI`:
 
 ```bash
 kubectl create secret generic postgres-mcp-database \
@@ -14,7 +41,7 @@ helm upgrade --install postgres-mcp ./charts/postgres-mcp \
   --set database.existingSecret=postgres-mcp-database
 ```
 
-Or let the chart create a secret from `database.uri`:
+Or let the chart create a legacy single-connection secret from `database.uri`:
 
 ```bash
 helm upgrade --install postgres-mcp ./charts/postgres-mcp \
