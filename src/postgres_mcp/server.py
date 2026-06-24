@@ -11,17 +11,21 @@ from typing import Literal
 from typing import Union
 
 import mcp.types as types
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
+from fastmcp.tools import Tool
 from mcp.types import ToolAnnotations
 from pydantic import Field
 from pydantic import validate_call
 
+from postgres_mcp.audit import get_caller_identity
+from postgres_mcp.audit import log_safe
 from postgres_mcp.config import AccessMode
 from postgres_mcp.config import ConnectionSelection
 from postgres_mcp.config import DatabaseConnectionConfig
 from postgres_mcp.config import DatabasesConfig
 from postgres_mcp.config import load_database_config
 from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
+from postgres_mcp.oauth import build_auth_provider
 
 from .artifacts import ErrorResult
 from .artifacts import ExplainPlanArtifact
@@ -60,6 +64,29 @@ current_access_mode = AccessMode.UNRESTRICTED
 shutdown_in_progress = False
 
 
+def _audit_fields(**fields: Any) -> str:
+    parts = [get_caller_identity().as_log_fields()]
+    for key, value in fields.items():
+        cleaned = log_safe(value)
+        if cleaned:
+            parts.append(f"{key}={cleaned}")
+    return " ".join(parts)
+
+
+def log_tool_call(tool_name: str, **fields: Any) -> None:
+    logger.info("Tool %s %s", tool_name, _audit_fields(**fields))
+
+
+def configure_http_auth(*, host: str, port: int) -> None:
+    """Attach FastMCP HTTP auth for audit identity when enabled."""
+    auth_provider = build_auth_provider(host=host, port=port)
+    mcp.auth = auth_provider
+    if auth_provider is not None:
+        logger.info(
+            "OAuth 2.1/JWT authentication enabled for audit identity only; database connection access remains controlled by static configuration."
+        )
+
+
 def _available_connection_names() -> str:
     names = sorted(db_connections) if db_connections else ["default"]
     return ", ".join(names)
@@ -71,8 +98,7 @@ def _resolve_connection_name(connection: str | None = None) -> str:
     if not requested_connection:
         if connection_selection == "strict":
             raise ValueError(
-                "A connection parameter is required for this tool call. "
-                f"Available connections: {_available_connection_names()}",
+                f"A connection parameter is required for this tool call. Available connections: {_available_connection_names()}",
             )
         requested_connection = default_connection_name
 
@@ -178,17 +204,27 @@ def register_execute_sql_tool() -> None:
             readOnlyHint=True,
         )
 
-    existing_tool = mcp._tool_manager._tools.get("execute_sql")  # type: ignore[attr-defined]
-    if existing_tool:
-        existing_tool.description = description
-        existing_tool.annotations = annotations
-        return
+    try:
+        mcp.local_provider.remove_tool("execute_sql")
+    except KeyError:
+        pass
 
-    mcp.add_tool(
-        execute_sql,
-        description=description,
-        annotations=annotations,
+    mcp.local_provider.add_tool(
+        Tool.from_function(
+            execute_sql,
+            name="execute_sql",
+            description=description,
+            annotations=annotations,
+        )
     )
+
+
+def get_registered_tool(name: str) -> Tool | None:
+    """Return a registered local tool by name for tests and startup checks."""
+    for component in mcp.local_provider._components.values():  # type: ignore[attr-defined]
+        if isinstance(component, Tool) and component.name == name:
+            return component
+    return None
 
 
 def _connection_status(name: str, pool: DbConnPool) -> dict[str, Any]:
@@ -213,6 +249,7 @@ def _connection_status(name: str, pool: DbConnPool) -> dict[str, Any]:
 async def list_connections() -> ResponseType:
     """List configured database connections without exposing connection URIs."""
     try:
+        log_tool_call("list_connections")
         if not db_connections:
             mode = current_access_mode.value
             status = "connected" if db_connection.is_valid else "error" if db_connection.last_error else "not_connected"
@@ -246,6 +283,7 @@ async def list_schemas(
 ) -> ResponseType:
     """List all schemas in the database."""
     try:
+        log_tool_call("list_schemas", connection=connection)
         sql_driver = await get_sql_driver(connection)
         rows = await sql_driver.execute_query(
             """
@@ -282,6 +320,7 @@ async def list_objects(
 ) -> ResponseType:
     """List objects of a given type in a schema."""
     try:
+        log_tool_call("list_objects", connection=connection, schema=schema_name, object_type=object_type)
         sql_driver = await get_sql_driver(connection)
 
         if object_type in ("table", "view"):
@@ -358,6 +397,13 @@ async def get_object_details(
 ) -> ResponseType:
     """Get detailed information about a database object."""
     try:
+        log_tool_call(
+            "get_object_details",
+            connection=connection,
+            schema=schema_name,
+            object=object_name,
+            object_type=object_type,
+        )
         sql_driver = await get_sql_driver(connection)
 
         if object_type in ("table", "view"):
@@ -521,6 +567,13 @@ If there is no hypothetical index, you can pass an empty list.""",
         hypothetical_indexes: Optional list of indexes to simulate
     """
     try:
+        log_tool_call(
+            "explain_query",
+            connection=connection,
+            analyze=analyze,
+            hypothetical_indexes=len(hypothetical_indexes or []),
+            sql_chars=len(sql),
+        )
         sql_driver = await get_sql_driver(connection)
         explain_tool = ExplainPlanTool(sql_driver=sql_driver)
         result: ExplainPlanArtifact | ErrorResult | None = None
@@ -576,6 +629,7 @@ async def execute_sql(
 ) -> ResponseType:
     """Executes a SQL query against the database."""
     try:
+        log_tool_call("execute_sql", connection=connection, sql_chars=len(sql))
         sql_driver = await get_sql_driver(connection)
         rows = await sql_driver.execute_query(sql)  # type: ignore
         if rows is None:
@@ -600,6 +654,7 @@ async def execute_sql_ro(
 ) -> ResponseType:
     """Executes a SQL query in read-only restricted mode against the selected database."""
     try:
+        log_tool_call("execute_sql_ro", connection=connection, sql_chars=len(sql))
         sql_driver = await get_sql_driver(connection, force_restricted=True)
         rows = await sql_driver.execute_query(sql)  # type: ignore
         if rows is None:
@@ -625,6 +680,12 @@ async def analyze_workload_indexes(
 ) -> ResponseType:
     """Analyze frequently executed queries in the database and recommend optimal indexes."""
     try:
+        log_tool_call(
+            "analyze_workload_indexes",
+            connection=connection,
+            method=method,
+            max_index_size_mb=max_index_size_mb,
+        )
         sql_driver = await get_sql_driver(connection)
         if method == "dta":
             index_tuning = DatabaseTuningAdvisor(sql_driver)
@@ -653,6 +714,13 @@ async def analyze_query_indexes(
     connection: str = Field(description="Configured database connection name. Required when connection_selection is strict.", default=""),
 ) -> ResponseType:
     """Analyze a list of SQL queries and recommend optimal indexes."""
+    log_tool_call(
+        "analyze_query_indexes",
+        connection=connection,
+        method=method,
+        query_count=len(queries),
+        max_index_size_mb=max_index_size_mb,
+    )
     if len(queries) == 0:
         return format_error_response("Please provide a non-empty list of queries to analyze.")
     if len(queries) > MAX_NUM_INDEX_TUNING_QUERIES:
@@ -701,6 +769,7 @@ async def analyze_db_health(
         health_type: Comma-separated list of health check types to perform.
                     Valid values: index, connection, vacuum, sequence, replication, buffer, constraint, all
     """
+    log_tool_call("analyze_db_health", connection=connection, health_type=health_type)
     health_tool = DatabaseHealthTool(await get_sql_driver(connection))
     result = await health_tool.health(health_type=health_type)
     return format_text_response(result)
@@ -724,6 +793,7 @@ async def get_top_queries(
     connection: str = Field(description="Configured database connection name. Required when connection_selection is strict.", default=""),
 ) -> ResponseType:
     try:
+        log_tool_call("get_top_queries", connection=connection, sort_by=sort_by, limit=limit)
         sql_driver = await get_sql_driver(connection)
         top_queries_tool = TopQueriesCalc(sql_driver=sql_driver)
 
@@ -822,15 +892,21 @@ async def main():
 
     # Run the server with the selected transport (always async)
     if args.transport == "stdio":
-        await mcp.run_stdio_async()
+        mcp.auth = None
+        if os.getenv("MCP_ENABLE_OAUTH21", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
+            logger.warning("OAuth 2.1/JWT authentication is only applied to HTTP transports; stdio will audit as anonymous.")
+        await mcp.run_async(transport="stdio")
     elif args.transport == "sse":
-        mcp.settings.host = args.sse_host
-        mcp.settings.port = args.sse_port
-        await mcp.run_sse_async()
+        configure_http_auth(host=args.sse_host, port=args.sse_port)
+        await mcp.run_async(transport="sse", host=args.sse_host, port=args.sse_port)
     elif args.transport == "streamable-http":
-        mcp.settings.host = args.streamable_http_host
-        mcp.settings.port = args.streamable_http_port
-        await mcp.run_streamable_http_async()
+        configure_http_auth(host=args.streamable_http_host, port=args.streamable_http_port)
+        await mcp.run_async(
+            transport="http",
+            host=args.streamable_http_host,
+            port=args.streamable_http_port,
+            stateless_http=True,
+        )
 
 
 async def shutdown(sig=None):

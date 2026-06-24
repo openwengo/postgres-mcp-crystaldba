@@ -10,6 +10,7 @@ from postgres_mcp.config import DatabaseConnectionConfig
 from postgres_mcp.config import DatabasesConfig
 from postgres_mcp.server import configure_database_connections
 from postgres_mcp.server import execute_sql_ro
+from postgres_mcp.server import get_registered_tool
 from postgres_mcp.server import get_sql_driver
 from postgres_mcp.server import list_connections
 from postgres_mcp.server import register_execute_sql_tool
@@ -138,9 +139,8 @@ def test_register_execute_sql_tool_is_destructive_when_any_connection_is_unrestr
 
     register_execute_sql_tool()
 
-    import postgres_mcp.server as server
-
-    tool = cast(Any, server.mcp)._tool_manager._tools["execute_sql"]
+    tool = get_registered_tool("execute_sql")
+    assert tool is not None
     assert tool.annotations is not None
     assert tool.annotations.destructiveHint is True
     assert tool.annotations.readOnlyHint is None
@@ -157,18 +157,16 @@ def test_register_execute_sql_tool_is_read_only_when_all_connections_are_restric
 
     register_execute_sql_tool()
 
-    import postgres_mcp.server as server
-
-    tool = cast(Any, server.mcp)._tool_manager._tools["execute_sql"]
+    tool = get_registered_tool("execute_sql")
+    assert tool is not None
     assert tool.annotations is not None
     assert tool.annotations.readOnlyHint is True
     assert tool.annotations.destructiveHint is None
 
 
 def test_execute_sql_ro_tool_is_always_read_only():
-    import postgres_mcp.server as server
-
-    tool = cast(Any, server.mcp)._tool_manager._tools["execute_sql_ro"]
+    tool = get_registered_tool("execute_sql_ro")
+    assert tool is not None
     assert tool.annotations is not None
     assert tool.annotations.readOnlyHint is True
     assert tool.annotations.destructiveHint is None

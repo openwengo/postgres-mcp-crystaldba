@@ -21,25 +21,20 @@ async def test_transport_argument_parsing(transport):
 
         with (
             patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()),
-            patch("postgres_mcp.server.mcp.run_stdio_async", AsyncMock()) as mock_stdio,
-            patch("postgres_mcp.server.mcp.run_sse_async", AsyncMock()) as mock_sse,
-            patch("postgres_mcp.server.mcp.run_streamable_http_async", AsyncMock()) as mock_http,
+            patch("postgres_mcp.server.build_auth_provider", return_value=None) as mock_auth,
+            patch("postgres_mcp.server.mcp.run_async", AsyncMock()) as mock_run,
         ):
             await main()
 
-            # Verify the correct transport method was called
             if transport == "stdio":
-                mock_stdio.assert_called_once()
-                mock_sse.assert_not_called()
-                mock_http.assert_not_called()
+                mock_auth.assert_not_called()
+                mock_run.assert_awaited_once_with(transport="stdio")
             elif transport == "sse":
-                mock_stdio.assert_not_called()
-                mock_sse.assert_called_once()
-                mock_http.assert_not_called()
+                mock_auth.assert_called_once_with(host="localhost", port=8000)
+                mock_run.assert_awaited_once_with(transport="sse", host="localhost", port=8000)
             elif transport == "streamable-http":
-                mock_stdio.assert_not_called()
-                mock_sse.assert_not_called()
-                mock_http.assert_called_once()
+                mock_auth.assert_called_once_with(host="localhost", port=8000)
+                mock_run.assert_awaited_once_with(transport="http", host="localhost", port=8000, stateless_http=True)
     finally:
         sys.argv = original_argv
 
@@ -48,7 +43,6 @@ async def test_transport_argument_parsing(transport):
 async def test_streamable_http_host_port_arguments():
     """Test that streamable-http host and port arguments are applied correctly."""
     from postgres_mcp.server import main
-    from postgres_mcp.server import mcp
 
     original_argv = sys.argv
     try:
@@ -62,13 +56,13 @@ async def test_streamable_http_host_port_arguments():
 
         with (
             patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()),
-            patch("postgres_mcp.server.mcp.run_streamable_http_async", AsyncMock()),
+            patch("postgres_mcp.server.build_auth_provider", return_value=None) as mock_auth,
+            patch("postgres_mcp.server.mcp.run_async", AsyncMock()) as mock_run,
         ):
             await main()
 
-            # Verify the host and port were set correctly
-            assert mcp.settings.host == "0.0.0.0"
-            assert mcp.settings.port == 9000
+            mock_auth.assert_called_once_with(host="0.0.0.0", port=9000)
+            mock_run.assert_awaited_once_with(transport="http", host="0.0.0.0", port=9000, stateless_http=True)
     finally:
         sys.argv = original_argv
 
@@ -77,7 +71,6 @@ async def test_streamable_http_host_port_arguments():
 async def test_sse_host_port_arguments():
     """Test that SSE host and port arguments are applied correctly."""
     from postgres_mcp.server import main
-    from postgres_mcp.server import mcp
 
     original_argv = sys.argv
     try:
@@ -91,13 +84,13 @@ async def test_sse_host_port_arguments():
 
         with (
             patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()),
-            patch("postgres_mcp.server.mcp.run_sse_async", AsyncMock()),
+            patch("postgres_mcp.server.build_auth_provider", return_value=None) as mock_auth,
+            patch("postgres_mcp.server.mcp.run_async", AsyncMock()) as mock_run,
         ):
             await main()
 
-            # Verify the host and port were set correctly
-            assert mcp.settings.host == "0.0.0.0"
-            assert mcp.settings.port == 8080
+            mock_auth.assert_called_once_with(host="0.0.0.0", port=8080)
+            mock_run.assert_awaited_once_with(transport="sse", host="0.0.0.0", port=8080)
     finally:
         sys.argv = original_argv
 
@@ -116,14 +109,23 @@ async def test_default_transport_is_stdio():
 
         with (
             patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()),
-            patch("postgres_mcp.server.mcp.run_stdio_async", AsyncMock()) as mock_stdio,
-            patch("postgres_mcp.server.mcp.run_sse_async", AsyncMock()) as mock_sse,
-            patch("postgres_mcp.server.mcp.run_streamable_http_async", AsyncMock()) as mock_http,
+            patch("postgres_mcp.server.build_auth_provider", return_value=None) as mock_auth,
+            patch("postgres_mcp.server.mcp.run_async", AsyncMock()) as mock_run,
         ):
             await main()
 
-            mock_stdio.assert_called_once()
-            mock_sse.assert_not_called()
-            mock_http.assert_not_called()
+            mock_auth.assert_not_called()
+            mock_run.assert_awaited_once_with(transport="stdio")
     finally:
         sys.argv = original_argv
+
+
+def test_configure_http_auth_sets_provider():
+    from postgres_mcp.server import configure_http_auth
+    from postgres_mcp.server import mcp
+
+    provider = object()
+    with patch("postgres_mcp.server.build_auth_provider", return_value=provider):
+        configure_http_auth(host="0.0.0.0", port=9000)
+
+    assert mcp.auth is provider

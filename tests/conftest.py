@@ -46,6 +46,7 @@ def reset_server_connection_state():
     server.connection_selection = "default"
     server.current_access_mode = server.AccessMode.UNRESTRICTED
     server.shutdown_in_progress = False
+    server.mcp.auth = None
     server.db_connection.connection_url = None
     server.db_connection.pool = None
     server.db_connection._is_valid = False

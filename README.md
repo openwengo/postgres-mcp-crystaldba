@@ -36,7 +36,7 @@ Features include:
 - **🧠 Schema Intelligence** - context-aware SQL generation based on detailed understanding of the database schema.
 - **🛡️ Safe SQL Execution** - configurable access control, including support for read-only mode and safe SQL parsing, making it usable for both development and production.
 
-Postgres MCP Pro supports both the [Standard Input/Output (stdio)](https://modelcontextprotocol.io/docs/concepts/transports#standard-input%2Foutput-stdio) and [Server-Sent Events (SSE)](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) transports, for flexibility in different environments.
+Postgres MCP Pro supports the [Standard Input/Output (stdio)](https://modelcontextprotocol.io/docs/concepts/transports#standard-input%2Foutput-stdio), [Server-Sent Events (SSE)](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse), and Streamable HTTP transports, for flexibility in different environments.
 
 For additional background on why we built Postgres MCP Pro, see [our launch blog post](https://www.crystaldba.ai/blog/post/announcing-postgres-mcp-server-pro).
 
@@ -275,6 +275,102 @@ For Windsurf, the format in `mcp_config.json` is slightly different:
     }
 }
 ```
+
+## Streamable HTTP Transport and Audit Authentication
+
+Streamable HTTP is available at `/mcp`:
+
+```bash
+docker run -p 8000:8000 \
+  -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
+  crystaldba/postgres-mcp --access-mode=restricted --transport=streamable-http
+```
+
+OAuth 2.1/JWT authentication is supported on HTTP transports for audit identity.
+It does **not** change database authorization: all authenticated clients can use
+the statically configured database connections and modes.
+
+### Human OAuth and Machine JWTs on One Endpoint
+
+```bash
+export MCP_ENABLE_OAUTH21=true
+export MCP_UNIFIED_AUTH=true
+
+# Public URL used in OAuth metadata and callbacks.
+export POSTGRES_MCP_BASE_URL=http://localhost:8000
+# For ingress/reverse proxy production deployments:
+# export POSTGRES_MCP_EXTERNAL_URL=https://postgres-mcp.example.com
+
+# Human interactive OAuth.
+export GOOGLE_OAUTH_CLIENT_ID=...
+export GOOGLE_OAUTH_CLIENT_SECRET=...
+
+# Machine bearer JWT validation.
+export FASTMCP_SERVER_AUTH_JWT_JWKS_URI=https://www.googleapis.com/oauth2/v3/certs
+export FASTMCP_SERVER_AUTH_JWT_ISSUER=https://accounts.google.com
+export FASTMCP_SERVER_AUTH_JWT_AUDIENCE=postgres-mcp-bots
+```
+
+For multiple machine issuers, set `MCP_JWT_ISSUERS` to a JSON list. Each entry
+needs exactly one of `jwks_uri` or `public_key`, plus `issuer` and `audience`:
+
+```bash
+export MCP_JWT_ISSUERS='[
+  {"name":"eks-prod",
+   "jwks_uri":"https://oidc.eks.eu-west-3.amazonaws.com/id/PROD/keys",
+   "issuer":"https://oidc.eks.eu-west-3.amazonaws.com/id/PROD",
+   "audience":"postgres-mcp-bots"},
+  {"name":"google-wif",
+   "jwks_uri":"https://www.googleapis.com/oauth2/v3/certs",
+   "issuer":"https://accounts.google.com",
+   "audience":"postgres-mcp-bots"}
+]'
+```
+
+For machine-only deployments, use:
+
+```bash
+export MCP_ENABLE_OAUTH21=true
+export EXTERNAL_OAUTH21_PROVIDER=true
+export FASTMCP_SERVER_AUTH_JWT_JWKS_URI=https://www.googleapis.com/oauth2/v3/certs
+export FASTMCP_SERVER_AUTH_JWT_ISSUER=https://accounts.google.com
+export FASTMCP_SERVER_AUTH_JWT_AUDIENCE=postgres-mcp-bots
+```
+
+### OAuth Proxy Storage
+
+For production, use Valkey/Redis storage so OAuth client and token state survives
+pod restarts and is shared across replicas:
+
+```bash
+export POSTGRES_MCP_OAUTH_PROXY_STORAGE_BACKEND=valkey
+export POSTGRES_MCP_OAUTH_PROXY_VALKEY_HOST=redis.example.com
+export POSTGRES_MCP_OAUTH_PROXY_VALKEY_PORT=6379
+export POSTGRES_MCP_OAUTH_PROXY_VALKEY_DB=0
+# Optional:
+# export POSTGRES_MCP_OAUTH_PROXY_VALKEY_USE_TLS=auto
+# export POSTGRES_MCP_OAUTH_PROXY_VALKEY_USERNAME=...
+# export POSTGRES_MCP_OAUTH_PROXY_VALKEY_PASSWORD=...
+# export POSTGRES_MCP_OAUTH_PROXY_VALKEY_KEY_PREFIX=postgres-mcp
+```
+
+Valkey and disk storage are encrypted. The encryption key is derived from
+`FASTMCP_SERVER_AUTH_GOOGLE_JWT_SIGNING_KEY` when set, otherwise from
+`GOOGLE_OAUTH_CLIENT_SECRET`.
+
+### Audit Headers
+
+Every tool call logs the authenticated actor and optional per-call workflow
+headers:
+
+| Header | Logged as | Meaning |
+|--------|-----------|---------|
+| `x-airunner-identity` | `runner=` | runner/prototype identity |
+| `x-airunner-consumeraccount` | `consumer=` | client application or account |
+| `x-airunner-job` | `job=` | per-run job id |
+
+These headers are caller-asserted audit metadata and are not used for database
+authorization.
 
 ## Development With Docker Compose
 

@@ -45,6 +45,33 @@ ingresses:
             pathType: Prefix
 ```
 
+## Streamable HTTP Auth for Audit
+
+OAuth 2.1/JWT authentication is available on HTTP transports and is used for
+audit identity only. It does not change the static database connection access
+model. Enable streamable HTTP and provide auth settings via `extraEnv`:
+
+```yaml
+mcp:
+  transport: streamable-http
+
+extraEnv:
+  - name: MCP_ENABLE_OAUTH21
+    value: "true"
+  - name: MCP_UNIFIED_AUTH
+    value: "true"
+  - name: POSTGRES_MCP_EXTERNAL_URL
+    value: "https://postgres-mcp.example.com"
+  - name: POSTGRES_MCP_OAUTH_PROXY_STORAGE_BACKEND
+    value: valkey
+  - name: POSTGRES_MCP_OAUTH_PROXY_VALKEY_HOST
+    value: valkey.example.com
+```
+
+For machine JWTs, configure `FASTMCP_SERVER_AUTH_JWT_*` or `MCP_JWT_ISSUERS`.
+For human OAuth, configure `GOOGLE_OAUTH_CLIENT_ID` and
+`GOOGLE_OAUTH_CLIENT_SECRET`.
+
 ## HPA and PDB
 
 Enable autoscaling and disruption budgets independently:

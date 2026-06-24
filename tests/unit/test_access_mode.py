@@ -91,7 +91,7 @@ async def test_command_line_parsing():
         with (
             patch("postgres_mcp.server.current_access_mode", AccessMode.UNRESTRICTED),
             patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()),
-            patch("postgres_mcp.server.mcp.run_stdio_async", AsyncMock()),
+            patch("postgres_mcp.server.mcp.run_async", AsyncMock()),
             patch("postgres_mcp.server.shutdown", AsyncMock()),
         ):
             # Reset the current_access_mode to UNRESTRICTED

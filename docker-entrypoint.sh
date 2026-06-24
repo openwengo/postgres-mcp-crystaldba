@@ -130,6 +130,30 @@ if [[ "$has_sse" == true ]] && [[ "$has_sse_host" == false ]]; then
     processed_args+=("--sse-host=0.0.0.0")
 fi
 
+# Check if streamable HTTP transport is specified and --streamable-http-host is not already set
+has_streamable_http=false
+has_streamable_http_host=false
+
+for arg in "${processed_args[@]}"; do
+    if [[ "$arg" == "--transport" ]]; then
+        for next_arg in "${processed_args[@]}"; do
+            if [[ "$next_arg" == "streamable-http" ]]; then
+                has_streamable_http=true
+                break
+            fi
+        done
+    elif [[ "$arg" == "--transport=streamable-http" ]]; then
+        has_streamable_http=true
+    elif [[ "$arg" == "--streamable-http-host"* ]]; then
+        has_streamable_http_host=true
+    fi
+done
+
+if [[ "$has_streamable_http" == true ]] && [[ "$has_streamable_http_host" == false ]]; then
+    echo "Streamable HTTP transport detected, adding --streamable-http-host=0.0.0.0" >&2
+    processed_args+=("--streamable-http-host=0.0.0.0")
+fi
+
 echo "----------------" >&2
 echo "Executing command:" >&2
 echo "${processed_args[@]}" >&2
