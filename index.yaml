@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  postgres-mcp:
+  - apiVersion: v2
+    appVersion: 0.3.0
+    created: "2026-06-24T11:29:57.836534229Z"
+    description: A Helm chart for Postgres MCP Pro
+    digest: cdc9383ebb16e55171a1e0c96b5ae546d2912f073c2c7f7f4680dfe51a472c15
+    name: postgres-mcp
+    type: application
+    urls:
+    - postgres-mcp-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-06-24T11:29:57.836539698Z"
